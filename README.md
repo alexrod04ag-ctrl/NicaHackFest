@@ -4,7 +4,7 @@ Laboratorio práctico del taller **Zero Trust: de la teoría a la red** (NicaHac
 
 Vas a construir el control de acceso a la red de una organización: crear tu propia PKI, levantar un servidor RADIUS, autenticar dispositivos con **802.1X**, comparar **contraseñas vs. certificados**, asignar una **VLAN según la identidad**, **revocar** un dispositivo y proteger RADIUS con **RadSec**.
 
-[![Abrir en GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/OWNER/REPO?quickstart=1)
+[![Abrir en GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/alexrod04ag-ctrl/NicaHackFest?quickstart=1)
 
 ```
  [ Dispositivo ]  ── 802.1X / EAP ──  [ Servidor RADIUS ]  ←──  [ Tu PKI ]
@@ -29,8 +29,8 @@ Funciona igual en Windows, macOS, Linux o Chromebook: solo necesitas un navegado
 ### Alternativa: en tu laptop con Docker
 
 ```bash
-git clone https://github.com/OWNER/REPO.git
-cd REPO
+git clone https://github.com/alexrod04ag-ctrl/NicaHackFest.git
+cd NicaHackFest
 docker build -t zt-lab .devcontainer
 docker run -it --rm -v "$PWD":/lab -w /lab zt-lab
 ```
