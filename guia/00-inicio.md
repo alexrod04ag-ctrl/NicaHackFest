@@ -6,7 +6,11 @@
 - **Abajo**: la terminal, donde vas a escribir los comandos. Si no la ves, abre el menú ☰ › **Terminal** › **New Terminal**.
 - **Izquierda**: el explorador de archivos del laboratorio.
 
-Para copiar un comando de esta guía, pasa el mouse sobre el bloque de código y usa el botón de copiar. En la terminal, pega con `Ctrl+Shift+V` (o `Cmd+V` en Mac).
+Para copiar un comando de esta guía, selecciónalo con el mouse y cópialo con `Ctrl+C` (o `Cmd+C` en Mac). En la terminal, pega con `Ctrl+Shift+V` (o `Cmd+V` en Mac).
+
+> **Tip:** si prefieres un botón de copiar en cada comando, abre la misma guía en GitHub en otra pestaña del navegador: [github.com/alexrod04ag-ctrl/NicaHackFest](https://github.com/alexrod04ag-ctrl/NicaHackFest/tree/main/guia).
+>
+> Si una guía se abre con símbolos como `**` o `|`, haz clic derecho sobre su pestaña y elige **Open Preview** para verla con formato.
 
 ## Cómo está armado el laboratorio
 
