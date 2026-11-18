@@ -1,0 +1,44 @@
+# Módulo EAP del laboratorio
+# - EAP-TLS: identidad por certificado (sin contraseñas)
+# - PEAP-MSCHAPv2: identidad por usuario y contraseña, para comparar
+eap {
+	default_eap_type = tls
+	timer_expire = 60
+	ignore_unknown_eap_types = no
+	cisco_accounting_username_bug = no
+	max_sessions = ${max_requests}
+
+	tls-config tls-lab {
+		# Identidad del servidor RADIUS (la creas en el ejercicio 2)
+		private_key_file = /lab/pki/radius.key
+		certificate_file = /lab/pki/radius.pem
+
+		# Solo se aceptan clientes firmados por la CA del laboratorio
+		ca_file = /lab/pki/ca.pem
+		ca_path = /lab/pki/ca_path
+
+		# Ejercicio 5: cambia "no" por "yes" para revisar la lista de revocación (CRL)
+		check_crl = no
+
+		cipher_list = "DEFAULT"
+		tls_min_version = "1.2"
+		tls_max_version = "1.2"
+
+		cache {
+			enable = no
+		}
+	}
+
+	tls {
+		tls = tls-lab
+	}
+
+	peap {
+		tls = tls-lab
+		default_eap_type = mschapv2
+		virtual_server = "inner-tunnel"
+	}
+
+	mschapv2 {
+	}
+}

@@ -1,0 +1,12 @@
+# Archivos que genera cada participante durante el laboratorio
+pki/*.key
+pki/*.pem
+pki/*.csr
+pki/*.old
+pki/*.attr
+pki/index.txt*
+pki/serial*
+pki/crlnumber*
+pki/ca_path/
+pki/emitidos/*
+!pki/emitidos/.keep

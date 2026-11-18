@@ -1,0 +1,53 @@
+# Configuración de la CA del laboratorio (solo para uso educativo)
+[ ca ]
+default_ca = lab_ca
+
+[ lab_ca ]
+dir               = /lab/pki
+database          = $dir/index.txt
+serial            = $dir/serial
+crlnumber         = $dir/crlnumber
+new_certs_dir     = $dir/emitidos
+certificate       = $dir/ca.pem
+private_key       = $dir/ca.key
+default_md        = sha256
+default_days      = 365
+default_crl_days  = 30
+policy            = politica_lab
+copy_extensions   = none
+unique_subject    = no
+
+[ politica_lab ]
+organizationName       = supplied
+organizationalUnitName = optional
+commonName             = supplied
+
+[ req ]
+distinguished_name = dn_req
+prompt             = no
+
+[ dn_req ]
+CN = placeholder
+
+# CA raíz
+[ v3_ca ]
+basicConstraints       = critical, CA:true
+keyUsage               = critical, keyCertSign, cRLSign
+subjectKeyIdentifier   = hash
+
+# Servidor RADIUS
+[ servidor ]
+basicConstraints       = CA:false
+keyUsage               = critical, digitalSignature, keyEncipherment
+extendedKeyUsage       = serverAuth
+subjectAltName         = DNS:radius.lab
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid
+
+# Dispositivo (cliente EAP-TLS o cliente RadSec)
+[ dispositivo ]
+basicConstraints       = CA:false
+keyUsage               = critical, digitalSignature
+extendedKeyUsage       = clientAuth
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid

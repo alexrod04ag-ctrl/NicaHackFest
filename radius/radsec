@@ -1,0 +1,29 @@
+# Bonus: RadSec (RADIUS sobre TLS) en el puerto TCP 2083
+listen {
+	ipaddr = 127.0.0.1
+	port = 2083
+	type = auth
+	proto = tcp
+	virtual_server = default
+	clients = radsec
+
+	tls {
+		private_key_file = /lab/pki/radius.key
+		certificate_file = /lab/pki/radius.pem
+		ca_file = /lab/pki/ca.pem
+		require_client_cert = yes
+		cipher_list = "DEFAULT"
+		tls_min_version = "1.2"
+		cache {
+			enable = no
+		}
+	}
+}
+
+clients radsec {
+	client radsecproxy {
+		ipaddr = 127.0.0.1
+		proto = tls
+		secret = radsec
+	}
+}

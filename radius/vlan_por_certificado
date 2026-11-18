@@ -1,0 +1,35 @@
+# Ejercicio 4: autorización según el certificado del dispositivo
+# La unidad organizativa (OU) del certificado decide la VLAN.
+vlan_por_certificado {
+	# Solo aplica cuando el cliente se autenticó con certificado (EAP-TLS)
+	if (&TLS-Client-Cert-Subject) {
+
+		if (&TLS-Client-Cert-Subject =~ /OU=Corporativo/) {
+			update reply {
+				&Tunnel-Type := VLAN
+				&Tunnel-Medium-Type := IEEE-802
+				&Tunnel-Private-Group-Id := "10"
+				&Reply-Message := "Equipo corporativo: VLAN 10 (produccion)"
+			}
+		}
+
+		# --- Ejercicio 4: quita el símbolo # al inicio de las 8 líneas siguientes ---
+		# elsif (&TLS-Client-Cert-Subject =~ /OU=IoT/) {
+		# 	update reply {
+		# 		&Tunnel-Type := VLAN
+		# 		&Tunnel-Medium-Type := IEEE-802
+		# 		&Tunnel-Private-Group-Id := "30"
+		# 		&Reply-Message := "Dispositivo IoT: VLAN 30 (aislada)"
+		# 	}
+		# }
+
+		else {
+			update reply {
+				&Tunnel-Type := VLAN
+				&Tunnel-Medium-Type := IEEE-802
+				&Tunnel-Private-Group-Id := "99"
+				&Reply-Message := "Sin categoria: VLAN 99 (cuarentena)"
+			}
+		}
+	}
+}

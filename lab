@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+# Asistente del Laboratorio Zero Trust · NicaHackfest
+# Escribe "lab ayuda" para ver los comandos.
+set -uo pipefail
+
+LAB=/lab
+RAD=/etc/freeradius/3.0
+RUN=/tmp/zt-lab
+LOG=$RUN/radius.log
+SECRETO=testing123
+mkdir -p "$RUN"
+
+V=$'\e[32m'; R=$'\e[31m'; A=$'\e[33m'; C=$'\e[36m'; N=$'\e[1m'; X=$'\e[0m'
+ok()    { echo "  ${V}✔${X} $*"; }
+mal()   { echo "  ${R}✘${X} $*"; FALLO=1; }
+nota()  { echo "  ${C}›${X} $*"; }
+aviso() { echo "  ${A}⚠${X} $*"; }
+titulo(){ echo; echo "${N}$*${X}"; }
+
+# ---------------------------------------------------------------- servidor
+corriendo() { pgrep -f "freeradius -fxx" >/dev/null; }
+
+preparar() {
+  # Ajustes solo para el laboratorio: FreeRADIUS como root y sin IPv6
+  sed -i -E 's/^(\s*)(user|group) = freerad/\1#\2 = freerad/' $RAD/radiusd.conf
+  perl -0pi -e 's/^listen \{\n(?:(?!^\}).*\n)*?\tipv6addr = ::.*\n(?:(?!^\}).*\n)*?^\}\n//gm' \
+    $RAD/sites-available/default $RAD/sites-available/inner-tunnel
+  [[ -f $RAD/mods-available/eap.original ]] || cp $RAD/mods-available/eap $RAD/mods-available/eap.original
+
+  # Usuarios con contraseña
+  cp $LAB/radius/usuarios $RAD/mods-config/files/authorize
+
+  # Si ya existe la PKI del laboratorio, se usa su configuración EAP
+  if [[ -f $LAB/pki/ca.pem && -f $LAB/pki/radius.pem && -f $LAB/pki/radius.key ]]; then
+    mkdir -p $LAB/pki/ca_path
+    rm -f $LAB/pki/ca_path/*
+    cp $LAB/pki/ca.pem $LAB/pki/ca_path/
+    [[ -f $LAB/pki/crl.pem ]] && cp $LAB/pki/crl.pem $LAB/pki/ca_path/
+    openssl rehash $LAB/pki/ca_path 2>/dev/null
+    cp $LAB/radius/eap $RAD/mods-available/eap
+  else
+    cp $RAD/mods-available/eap.original $RAD/mods-available/eap
+  fi
+
+  # Política de autorización (VLAN según el certificado)
+  cp $LAB/radius/vlan_por_certificado $RAD/policy.d/vlan_por_certificado
+  grep -q "^\s*vlan_por_certificado" $RAD/sites-available/default || \
+    sed -i '0,/^post-auth {/s//post-auth {\n\tvlan_por_certificado/' $RAD/sites-available/default
+
+  # Bonus RadSec: solo si se activó con "lab radsec"
+  if [[ -f $RUN/radsec.on ]]; then cp $LAB/radius/radsec $RAD/sites-enabled/radsec
+  else rm -f $RAD/sites-enabled/radsec; fi
+}
+
+iniciar() {
+  if corriendo; then nota "El servidor RADIUS ya está corriendo. Usa ${N}lab reiniciar${X} para aplicar cambios."; return 0; fi
+  preparar
+  if ! freeradius -XC > $RUN/check.log 2>&1; then
+    echo "  ${R}✘ La configuración tiene un error.${X} Últimas líneas:"
+    grep -iE "error|failed|expecting|unknown" $RUN/check.log | tail -6 | sed 's/^/     /'
+    nota "Revisa el archivo que editaste, o usa ${N}lab solucion <n>${X} para ponerte al día."
+    return 1
+  fi
+  setsid freeradius -fxx -l stdout > "$LOG" 2>&1 < /dev/null &
+  for _ in $(seq 1 40); do grep -q "Ready to process requests" "$LOG" 2>/dev/null && break; sleep 0.25; done
+  if grep -q "Ready to process requests" "$LOG"; then
+    if [[ -f $LAB/pki/radius.pem ]]; then ok "Servidor RADIUS listo, con los certificados de tu PKI (EAP-TLS y PEAP)."
+    else ok "Servidor RADIUS listo (aún sin tu PKI: se configura en el ejercicio 2)."; fi
+  else
+    mal "El servidor no arrancó. Revisa: lab logs"; return 1
+  fi
+}
+
+detener() {
+  pkill -f "freeradius -fxx" 2>/dev/null; pkill -x radsecproxy 2>/dev/null
+  for _ in $(seq 1 20); do corriendo || break; sleep 0.2; done
+  ok "Servidor detenido."
+}
+
+reiniciar() { detener >/dev/null; iniciar; [[ -f $RUN/radsec.on ]] && radsecproxy_iniciar; true; }
+
+logs() {
+  [[ -f $LOG ]] || { nota "Todavía no hay registros. Inicia el servidor con: lab iniciar"; return; }
+  if [[ ${1:-} == "-f" ]]; then tail -n 30 -f "$LOG"; else tail -n "${1:-60}" "$LOG"; fi
+}
+
+# ---------------------------------------------------------------- pruebas 802.1X
+probar() {
+  local perfil=${1:-}
+  local conf=$LAB/clientes/$perfil.conf
+  [[ -f $conf ]] || { echo "Uso: lab probar <perfil>   Perfiles: $(ls $LAB/clientes | sed 's/\.conf//' | tr '\n' ' ')"; return 1; }
+  corriendo || { mal "El servidor RADIUS no está corriendo. Ejecuta: lab iniciar"; return 1; }
+  local out=$RUN/prueba-$perfil.log srv=$RUN/servidor-$perfil.log inicio
+  inicio=$(wc -l < "$LOG")
+  timeout 25 eapol_test -c "$conf" -a 127.0.0.1 -p 1812 -s $SECRETO -t 15 > "$out" 2>&1
+  sleep 0.3; tail -n +"$((inicio+1))" "$LOG" > "$srv"
+  local metodo; metodo=$(grep -o "eap=[A-Z]*" "$conf" | cut -d= -f2)
+  echo
+  echo "  Dispositivo: ${N}$perfil${X}   Método: ${N}$metodo${X}"
+  echo "  ${C}Lo que vio el servidor RADIUS:${X}"
+  if [[ $metodo == PEAP ]]; then
+    local ext int
+    ext=$(grep -m1 -oP 'User-Name = "\K[^"]+' "$srv"); int=$(grep -m1 -oP 'Setting User-Name to \K\S+' "$srv")
+    echo "    Identidad visible fuera del túnel:  ${ext:-?}"
+    echo "    Usuario dentro del túnel TLS:       ${int:-?}"
+    echo "    Cómo probó su identidad:            ${A}contraseña${X} (MSCHAPv2)"
+  else
+    local subj iss
+    subj=$(grep -m1 -oP 'TLS-Client-Cert-Subject := "\K[^"]+' "$srv"); iss=$(grep -m1 -oP 'TLS-Client-Cert-Issuer := "\K[^"]+' "$srv")
+    echo "    Certificado del cliente:            ${subj:-?}"
+    echo "    Emitido por:                        ${iss:-?}"
+    echo "    Cómo probó su identidad:            ${V}certificado${X} (sin contraseña)"
+    grep -qi "revoked" "$srv" && echo "    ${R}Motivo del rechazo: el certificado está revocado (CRL)${X}"
+  fi
+  if tail -n 3 "$out" | grep -q "^SUCCESS"; then
+    echo "  Resultado:   ${V}${N}ACCESO PERMITIDO${X} (Access-Accept)"
+    local hex vlan
+    hex=$(awk '/Access-Accept/{f=1} f&&/Attribute 81 /{getline; print $2; exit}' "$out")
+    if [[ -n $hex ]]; then
+      vlan=$(printf "%b" "$(sed 's/../\\x&/g' <<<"$hex")")
+      case $vlan in 10) d="producción";; 30) d="IoT aislada";; 99) d="cuarentena";; *) d="";; esac
+      echo "  VLAN:        ${N}$vlan${X} ${d:+($d)}"
+    fi
+    return 0
+  else
+    echo "  Resultado:   ${R}${N}ACCESO DENEGADO${X} (Access-Reject)"
+    nota "Detalle del servidor: lab logs"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------- bonus RadSec
+radsecproxy_iniciar() {
+  pkill -x radsecproxy 2>/dev/null; sleep 0.3
+  radsecproxy -c $LAB/radius/radsecproxy.conf -i $RUN/radsecproxy.pid
+  sleep 1
+}
+
+radsec() {
+  [[ -f $LAB/pki/radius.pem ]] || { mal "Primero completa el ejercicio 2 (PKI)."; return 1; }
+  if [[ ! -f $LAB/pki/radsecproxy.pem ]]; then
+    nota "Emitiendo el certificado del proxy RadSec…"
+    (cd $LAB/pki && ./emitir.sh dispositivo radsecproxy Infraestructura >/dev/null 2>&1)
+  fi
+  touch $RUN/radsec.on
+  detener >/dev/null; iniciar >/dev/null || return 1
+  radsecproxy_iniciar
+  if pgrep -x radsecproxy >/dev/null; then
+    ok "RadSec activo: radsecproxy (UDP 11812) → TLS → FreeRADIUS (TCP 2083)"
+    nota "Ahora compara el tráfico con: ${N}lab comparar${X}"
+  else mal "radsecproxy no arrancó. Revisa $RUN/radsecproxy.log"; return 1; fi
+}
+
+comparar() {
+  pgrep -x radsecproxy >/dev/null || { mal "Primero activa RadSec con: lab radsec"; return 1; }
+  titulo "1) RADIUS tradicional: UDP 1812"
+  timeout 6 tcpdump -i lo -n -A -c 2 udp port 1812 > $RUN/udp.txt 2>/dev/null &
+  sleep 1; radtest ana 'Nica2026!' 127.0.0.1 0 $SECRETO > /dev/null 2>&1; wait
+  if grep -q "ana" $RUN/udp.txt; then aviso "Cualquiera en la red puede leer el usuario ${N}ana${X} y los atributos en texto claro"
+  else nota "No se capturó el usuario (intenta de nuevo)"; fi
+  titulo "2) RadSec: TLS sobre TCP 2083"
+  timeout 6 tcpdump -i lo -n -A tcp port 2083 > $RUN/tls.txt 2>/dev/null &
+  sleep 1; radtest ana 'Nica2026!' 127.0.0.1:11812 0 $SECRETO > $RUN/radtest-radsec.txt 2>&1; sleep 1; pkill -x tcpdump; wait
+  if grep -q "Access-Accept" $RUN/radtest-radsec.txt; then ok "La autenticación funcionó a través de RadSec"; else mal "La autenticación por RadSec falló"; fi
+  if grep -q "ana" $RUN/tls.txt; then mal "Se ve el usuario en el tráfico TLS (no debería)"
+  else ok "En el tráfico TLS no aparece el usuario: todo viaja cifrado"; fi
+  nota "Capturas completas: $RUN/udp.txt y $RUN/tls.txt"
+}
+
+# ---------------------------------------------------------------- verificación
+cert_ok() { # nombre OU
+  [[ -f $LAB/pki/$1.pem && -f $LAB/pki/$1.key ]] || return 1
+  openssl verify -CAfile $LAB/pki/ca.pem $LAB/pki/$1.pem >/dev/null 2>&1 || return 1
+  [[ -z ${2:-} ]] || openssl x509 -in $LAB/pki/$1.pem -noout -subject | grep -q "OU *= *$2"
+}
+
+verificar() {
+  FALLO=0
+  case ${1:-} in
+    1) titulo "Ejercicio 1 · Servidor RADIUS y AAA"
+       corriendo && ok "El servidor RADIUS está corriendo" || mal "El servidor no está corriendo (lab iniciar)"
+       radtest ana 'Nica2026!' 127.0.0.1 0 $SECRETO 2>&1 | grep -q "Access-Accept" \
+         && ok "Contraseña correcta → Access-Accept" || mal "radtest con la contraseña correcta no recibió Access-Accept"
+       r=$(radtest ana 'incorrecta' 127.0.0.1 0 $SECRETO 2>&1); grep -q "Access-Reject" <<<"$r" \
+         && ok "Contraseña incorrecta → Access-Reject" || mal "radtest con contraseña incorrecta no recibió Access-Reject" ;;
+    2) titulo "Ejercicio 2 · Tu PKI"
+       [[ -f $LAB/pki/ca.pem && -f $LAB/pki/ca.key ]] && openssl x509 -in $LAB/pki/ca.pem -noout -text | grep -q "CA:TRUE" \
+         && ok "CA raíz creada" || mal "Falta la CA raíz (pki/ca.pem y pki/ca.key)"
+       cert_ok radius && ok "Certificado del servidor RADIUS" || mal "Falta pki/radius.pem firmado por tu CA"
+       cert_ok laptop-01 Corporativo && ok "Certificado de laptop-01 (OU=Corporativo)" || mal "Falta pki/laptop-01.pem con OU=Corporativo"
+       cert_ok camara-01 IoT && ok "Certificado de camara-01 (OU=IoT)" || mal "Falta pki/camara-01.pem con OU=IoT"
+       grep -q "ca_path" $RAD/mods-available/eap 2>/dev/null && corriendo \
+         && ok "El servidor ya usa tu PKI" || mal "Reinicia el servidor para cargar tu PKI: lab reiniciar" ;;
+    3) titulo "Ejercicio 3 · PEAP-MSCHAPv2 vs EAP-TLS"
+       probar peap-ana >/dev/null && ok "ana entró con PEAP-MSCHAPv2 (usuario y contraseña)" || mal "PEAP-MSCHAPv2 falló (lab probar peap-ana)"
+       probar laptop   >/dev/null && ok "laptop-01 entró con EAP-TLS (solo certificado)" || mal "EAP-TLS falló (lab probar laptop)" ;;
+    4) titulo "Ejercicio 4 · Autorización por certificado"
+       probar laptop > $RUN/v4a.txt; grep -q "VLAN: .*10" $RUN/v4a.txt && ok "laptop-01 → VLAN 10" || mal "laptop-01 no recibió la VLAN 10"
+       probar camara > $RUN/v4b.txt; grep -q "VLAN: .*30" $RUN/v4b.txt && ok "camara-01 → VLAN 30" \
+         || mal "camara-01 no recibió la VLAN 30 (¿quitaste los # y ejecutaste lab reiniciar?)" ;;
+    5) titulo "Ejercicio 5 · Revocación"
+       [[ -f $LAB/pki/crl.pem ]] && openssl crl -in $LAB/pki/crl.pem -noout -text | grep -q "Serial Number" \
+         && ok "La CRL tiene un certificado revocado" || mal "No hay certificados revocados (./revocar.sh camara-01)"
+       grep -Eq "^\s*check_crl = yes" $RAD/mods-available/eap && ok "El servidor revisa la CRL" \
+         || mal "check_crl sigue en no (edita radius/eap y ejecuta lab reiniciar)"
+       probar camara >/dev/null && mal "camara-01 todavía entra" || ok "camara-01 revocada → Access-Reject"
+       probar laptop >/dev/null && ok "laptop-01 sigue entrando" || mal "laptop-01 dejó de entrar" ;;
+    6) titulo "Bonus · RadSec"
+       pgrep -x radsecproxy >/dev/null && ok "radsecproxy está corriendo" || mal "radsecproxy no está corriendo (lab radsec)"
+       radtest ana 'Nica2026!' 127.0.0.1:11812 0 $SECRETO 2>&1 | grep -q "Access-Accept" \
+         && ok "Autenticación a través de RadSec → Access-Accept" || mal "La autenticación por RadSec falló" ;;
+    *) echo "Uso: lab verificar <1-6>"; return 1 ;;
+  esac
+  echo
+  if [[ $FALLO == 0 ]]; then echo "  ${V}${N}¡Ejercicio ${1} completo!${X}"; else echo "  ${A}Aún falta algo.${X} Si te atrasaste: ${N}lab solucion ${1}${X}"; fi
+  return $FALLO
+}
+
+solucion() {
+  local n=${1:-}
+  [[ $n =~ ^[1-6]$ ]] || { echo "Uso: lab solucion <1-6>"; return 1; }
+  for i in $(seq 1 "$n"); do bash $LAB/soluciones/$i.sh; done
+  verificar "$n"
+}
+
+reset() {
+  read -r -p "Esto borra tu PKI y deja el laboratorio como al inicio. ¿Continuar? (s/n) " r
+  [[ $r == s ]] || return 0
+  detener >/dev/null
+  rm -f $RUN/radsec.on
+  (cd $LAB/pki && rm -rf *.key *.pem *.csr *.old index.txt* serial* crlnumber* ca_path emitidos/[0-9A-F]*)
+  git -C $LAB checkout -- radius/ 2>/dev/null
+  ok "Laboratorio reiniciado. Empieza con: lab iniciar"
+}
+
+bienvenida() {
+  cat <<EOF
+
+${N}Laboratorio Zero Trust · NicaHackfest${X}
+  802.1X, certificados, RADIUS y RadSec, todo dentro de este entorno.
+
+  Empieza por la guía:  ${C}guia/00-inicio.md${X}
+  Comandos del laboratorio:  ${N}lab ayuda${X}
+
+EOF
+}
+
+ayuda() {
+  cat <<EOF
+
+${N}Comandos del laboratorio${X}
+  lab iniciar              Inicia el servidor RADIUS
+  lab reiniciar            Reinicia el servidor (después de editar un archivo)
+  lab detener              Detiene el servidor
+  lab logs [-f]            Muestra el registro del servidor (-f para seguirlo en vivo)
+  lab probar <perfil>      Simula un dispositivo 802.1X: peap-ana, laptop o camara
+  lab verificar <n>        Revisa si completaste el ejercicio n (1-6)
+  lab solucion <n>         Te pone al día hasta el ejercicio n
+  lab radsec               Bonus: activa RadSec
+  lab comparar             Bonus: compara RADIUS por UDP vs RadSec
+  lab reset                Borra tu PKI y empieza de cero
+
+EOF
+}
+
+case ${1:-ayuda} in
+  iniciar|start)       iniciar ;;
+  reiniciar|restart)   reiniciar ;;
+  detener|stop)        detener ;;
+  logs)                shift; logs "${1:-}" ;;
+  probar|test)         shift; probar "${1:-}" ;;
+  verificar|check)     shift; verificar "${1:-}" ;;
+  solucion|solve)      shift; solucion "${1:-}" ;;
+  radsec)              radsec ;;
+  comparar)            comparar ;;
+  reset)               reset ;;
+  bienvenida)          bienvenida ;;
+  ayuda|help|-h|*)     ayuda ;;
+esac

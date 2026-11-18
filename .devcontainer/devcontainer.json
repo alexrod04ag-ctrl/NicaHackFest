@@ -1,0 +1,20 @@
+{
+  "name": "Laboratorio Zero Trust · NicaHackfest",
+  "build": { "dockerfile": "Dockerfile" },
+  "remoteUser": "root",
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "ln -sfn \"${containerWorkspaceFolder}\" /lab && chmod +x /lab/lab /lab/pki/*.sh /lab/soluciones/*.sh",
+  "postAttachCommand": "lab bienvenida",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.cwd": "/lab",
+        "workbench.startupEditor": "readme"
+      }
+    },
+    "codespaces": {
+      "openFiles": ["guia/00-inicio.md"]
+    }
+  }
+}

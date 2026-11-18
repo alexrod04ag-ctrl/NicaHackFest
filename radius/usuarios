@@ -1,0 +1,3 @@
+# Usuarios con contraseña (para el ejercicio 1 y para PEAP-MSCHAPv2)
+ana	Cleartext-Password := "Nica2026!"
+	Reply-Message := "Bienvenida, ana"
