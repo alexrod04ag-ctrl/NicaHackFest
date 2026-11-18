@@ -57,7 +57,11 @@ iniciar() {
   preparar
   if ! freeradius -XC > $RUN/check.log 2>&1; then
     echo "  ${R}✘ La configuración tiene un error.${X} Últimas líneas:"
-    grep -iE "error|failed|expecting|unknown" $RUN/check.log | tail -6 | sed 's/^/     /'
+    grep -E "^/etc/freeradius/3.0/[^ ]+\[[0-9]+\]:" $RUN/check.log | tail -3 \
+      | sed -E -e 's#/etc/freeradius/3.0/policy.d/vlan_por_certificado#radius/vlan_por_certificado#' \
+               -e 's#/etc/freeradius/3.0/mods-enabled/eap#radius/eap#' \
+               -e 's#\[([0-9]+)\]:#, línea \1:#' -e 's/^/     /'
+    grep -qE "^/etc/freeradius/3.0/[^ ]+\[[0-9]+\]:" $RUN/check.log || grep -iE "error|failed" $RUN/check.log | tail -3 | sed 's/^/     /'
     nota "Revisa el archivo que editaste, o usa ${N}lab solucion <n>${X} para ponerte al día."
     return 1
   fi

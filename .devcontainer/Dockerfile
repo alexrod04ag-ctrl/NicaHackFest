@@ -10,5 +10,4 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s /lab/lab /usr/local/bin/lab
 
-WORKDIR /lab
 CMD ["bash"]

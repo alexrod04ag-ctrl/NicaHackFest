@@ -2,8 +2,9 @@
   "name": "Laboratorio Zero Trust · NicaHackfest",
   "build": { "dockerfile": "Dockerfile" },
   "remoteUser": "root",
+  "runArgs": ["--cap-add=NET_RAW", "--cap-add=NET_ADMIN"],
   "hostRequirements": { "cpus": 2 },
-  "postCreateCommand": "ln -sfn \"${containerWorkspaceFolder}\" /lab && chmod +x /lab/lab /lab/pki/*.sh /lab/soluciones/*.sh",
+  "postCreateCommand": "rmdir /lab 2>/dev/null; ln -sfn \"${containerWorkspaceFolder}\" /lab && chmod +x /lab/lab /lab/pki/*.sh /lab/soluciones/*.sh",
   "postAttachCommand": "lab bienvenida",
   "customizations": {
     "vscode": {
