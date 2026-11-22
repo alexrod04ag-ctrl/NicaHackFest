@@ -13,9 +13,9 @@ eap {
 		private_key_file = /lab/pki/radius.key
 		certificate_file = /lab/pki/radius.pem
 
-		# Solo se aceptan clientes firmados por la CA del laboratorio
-		ca_file = /lab/pki/ca.pem
-		ca_path = /lab/pki/ca_path
+		# Solo se aceptan clientes firmados por la CA del laboratorio.
+		# "lab iniciar" arma este archivo con pki/ca.pem y, si existe, pki/crl.pem
+		ca_file = /etc/freeradius/3.0/certs/zt-lab-ca.pem
 
 		# Ejercicio 5: cambia "no" por "yes" para revisar la lista de revocación (CRL)
 		check_crl = no

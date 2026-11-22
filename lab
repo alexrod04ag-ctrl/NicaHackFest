@@ -32,11 +32,10 @@ preparar() {
 
   # Si ya existe la PKI del laboratorio, se usa su configuración EAP
   if [[ -f $LAB/pki/ca.pem && -f $LAB/pki/radius.pem && -f $LAB/pki/radius.key ]]; then
-    mkdir -p $LAB/pki/ca_path
-    rm -f $LAB/pki/ca_path/*
-    cp $LAB/pki/ca.pem $LAB/pki/ca_path/
-    [[ -f $LAB/pki/crl.pem ]] && cp $LAB/pki/crl.pem $LAB/pki/ca_path/
-    openssl rehash $LAB/pki/ca_path 2>/dev/null
+    # CA + lista de revocación en un solo archivo, dentro del contenedor
+    mkdir -p $RAD/certs
+    cat $LAB/pki/ca.pem > $RAD/certs/zt-lab-ca.pem
+    [[ -f $LAB/pki/crl.pem ]] && cat $LAB/pki/crl.pem >> $RAD/certs/zt-lab-ca.pem
     cp $LAB/radius/eap $RAD/mods-available/eap
   else
     cp $RAD/mods-available/eap.original $RAD/mods-available/eap
@@ -57,6 +56,7 @@ iniciar() {
   preparar
   if ! freeradius -XC > $RUN/check.log 2>&1; then
     echo "  ${R}✘ La configuración tiene un error.${X} Últimas líneas:"
+    grep -E "^(Unable|Failed to|Error|ERROR)" $RUN/check.log | grep -v "^/etc" | tail -2 | sed 's/^/     /'
     grep -E "^/etc/freeradius/3.0/[^ ]+\[[0-9]+\]:" $RUN/check.log | tail -3 \
       | sed -E -e 's#/etc/freeradius/3.0/policy.d/vlan_por_certificado#radius/vlan_por_certificado#' \
                -e 's#/etc/freeradius/3.0/mods-enabled/eap#radius/eap#' \
@@ -193,7 +193,7 @@ verificar() {
        cert_ok radius && ok "Certificado del servidor RADIUS" || mal "Falta pki/radius.pem firmado por tu CA"
        cert_ok laptop-01 Corporativo && ok "Certificado de laptop-01 (OU=Corporativo)" || mal "Falta pki/laptop-01.pem con OU=Corporativo"
        cert_ok camara-01 IoT && ok "Certificado de camara-01 (OU=IoT)" || mal "Falta pki/camara-01.pem con OU=IoT"
-       grep -q "ca_path" $RAD/mods-available/eap 2>/dev/null && corriendo \
+       grep -q "zt-lab-ca.pem" $RAD/mods-available/eap 2>/dev/null && corriendo \
          && ok "El servidor ya usa tu PKI" || mal "Reinicia el servidor para cargar tu PKI: lab reiniciar" ;;
     3) titulo "Ejercicio 3 · PEAP-MSCHAPv2 vs EAP-TLS"
        probar peap-ana >/dev/null && ok "ana entró con PEAP-MSCHAPv2 (usuario y contraseña)" || mal "PEAP-MSCHAPv2 falló (lab probar peap-ana)"
@@ -233,6 +233,7 @@ reset() {
   detener >/dev/null
   rm -f $RUN/radsec.on
   (cd $LAB/pki && rm -rf *.key *.pem *.csr *.old index.txt* serial* crlnumber* ca_path emitidos/[0-9A-F]*)
+  rm -f $RAD/certs/zt-lab-ca.pem
   git -C $LAB checkout -- radius/ 2>/dev/null
   ok "Laboratorio reiniciado. Empieza con: lab iniciar"
 }
