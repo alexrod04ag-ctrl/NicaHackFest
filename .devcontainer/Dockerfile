@@ -8,6 +8,7 @@ RUN apt-get update \
       freeradius freeradius-utils eapoltest radsecproxy openssl tcpdump \
       nano less procps iproute2 git ca-certificates bash-completion \
  && rm -rf /var/lib/apt/lists/* \
- && ln -s /lab/lab /usr/local/bin/lab
+ && ln -s /lab/lab /usr/local/bin/lab \
+ && echo 'umask 022' >> /etc/bash.bashrc
 
 CMD ["bash"]

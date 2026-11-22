@@ -2,6 +2,7 @@
 # Revoca un certificado y publica la lista de revocación (CRL).
 # Uso: ./revocar.sh <nombre>
 set -euo pipefail
+umask 022
 cd /lab/pki
 nombre=${1:-}
 [[ -n $nombre && -f $nombre.pem ]] || { echo "Uso: ./revocar.sh <nombre>  (debe existir $nombre.pem)"; exit 1; }

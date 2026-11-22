@@ -4,6 +4,7 @@
 #   ./emitir.sh servidor     <nombre>
 #   ./emitir.sh dispositivo  <nombre> <unidad-organizativa>
 set -euo pipefail
+umask 022
 cd /lab/pki
 
 tipo=${1:-}; nombre=${2:-}; ou=${3:-}

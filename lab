@@ -3,6 +3,7 @@
 # Escribe "lab ayuda" para ver los comandos.
 set -uo pipefail
 
+umask 022   # FreeRADIUS se niega a usar archivos que cualquiera puede modificar
 LAB=/lab
 RAD=/etc/freeradius/3.0
 RUN=/tmp/zt-lab
@@ -49,6 +50,14 @@ preparar() {
   # Bonus RadSec: solo si se activó con "lab radsec"
   if [[ -f $RUN/radsec.on ]]; then cp $LAB/radius/radsec $RAD/sites-enabled/radsec
   else rm -f $RAD/sites-enabled/radsec; fi
+
+  # Permisos seguros: FreeRADIUS rechaza archivos de configuración que cualquiera puede modificar
+  chmod -R go-w $LAB/pki $LAB/radius 2>/dev/null
+  chmod go-w $RAD/mods-available/eap $RAD/mods-config/files/authorize $RAD/policy.d/vlan_por_certificado \
+    $RAD/sites-available/default $RAD/sites-available/inner-tunnel $RAD/radiusd.conf 2>/dev/null
+  [[ -f $RAD/certs/zt-lab-ca.pem ]] && chmod 644 $RAD/certs/zt-lab-ca.pem
+  [[ -f $RAD/sites-enabled/radsec ]] && chmod 644 $RAD/sites-enabled/radsec
+  true
 }
 
 iniciar() {
