@@ -11,7 +11,7 @@
   "hostRequirements": {
     "cpus": 2
   },
-  "postCreateCommand": "rmdir /lab 2>/dev/null; ln -sfn \"${containerWorkspaceFolder}\" /lab && chmod +x /lab/lab /lab/pki/*.sh /lab/soluciones/*.sh",
+  "postCreateCommand": "git config --system --add safe.directory '*' && rmdir /lab 2>/dev/null; ln -sfn \"${containerWorkspaceFolder}\" /lab && chmod +x /lab/lab /lab/pki/*.sh /lab/soluciones/*.sh",
   "postAttachCommand": "lab bienvenida",
   "customizations": {
     "vscode": {

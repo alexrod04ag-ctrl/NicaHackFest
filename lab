@@ -234,7 +234,7 @@ reset() {
   rm -f $RUN/radsec.on
   (cd $LAB/pki && rm -rf *.key *.pem *.csr *.old index.txt* serial* crlnumber* ca_path emitidos/[0-9A-F]*)
   rm -f $RAD/certs/zt-lab-ca.pem
-  git -C $LAB checkout -- radius/ 2>/dev/null
+  git -c safe.directory='*' -C $LAB checkout -- radius/ 2>/dev/null
   ok "Laboratorio reiniciado. Empieza con: lab iniciar"
 }
 
